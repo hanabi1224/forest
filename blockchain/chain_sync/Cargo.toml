@@ -48,6 +48,7 @@ smallvec.workspace               = true
 thiserror.workspace              = true
 time                             = { workspace = true, features = ["serde"] }
 tokio                            = { workspace = true, features = ["sync"] }
+tracing.workspace                = true
 
 [dev-dependencies]
 base64.workspace            = true

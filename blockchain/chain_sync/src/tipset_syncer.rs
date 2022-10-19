@@ -1136,8 +1136,13 @@ async fn validate_tipset<DB: BlockStore + Send + Sync + 'static, C: Consensus>(
         return Ok(());
     }
 
+    let span = tracing::info_span!("validate_tipset");
+    let _guard = span.enter();
+
     let epoch = full_tipset.epoch();
     let full_tipset_key = full_tipset.key().clone();
+
+    tracing::info!("[{:?}] validate_tipset started, EPOCH={epoch}", span.id());
 
     let mut validations = FuturesUnordered::new();
     for b in full_tipset.into_blocks() {
@@ -1179,6 +1184,7 @@ async fn validate_tipset<DB: BlockStore + Send + Sync + 'static, C: Consensus>(
             }
         }
     }
+    tracing::info!("[{:?}] validate_tipset finished, EPOCH={epoch}", span.id());
     Ok(())
 }
 
@@ -1204,6 +1210,16 @@ async fn validate_block<DB: BlockStore + Sync + Send + 'static, C: Consensus>(
     state_manager: Arc<StateManager<DB>>,
     block: Arc<Block>,
 ) -> Result<Arc<Block>, (Cid, TipsetRangeSyncerError<C>)> {
+    let span = tracing::info_span!("validate_block");
+    let _guard = span.enter();
+    tracing::info!(
+        "[{:?}] validate_block started: epoch = {}, weight = {}, key = {}",
+        span.id(),
+        block.header().epoch(),
+        block.header().weight(),
+        block.header().cid(),
+    );
+
     trace!(
         "Validating block: epoch = {}, weight = {}, key = {}",
         block.header().epoch(),
@@ -1385,6 +1401,8 @@ async fn validate_block<DB: BlockStore + Sync + Send + 'static, C: Consensus>(
                 )),
             )
         })?;
+
+    tracing::info!("[{:?}] validate_block finished", span.id());
 
     Ok(block)
 }

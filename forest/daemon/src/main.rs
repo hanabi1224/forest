@@ -93,6 +93,18 @@ fn build_daemon<'a>(config: &DaemonConfig) -> anyhow::Result<Daemon<'a>> {
 }
 
 fn main() {
+    let file_appender = tracing_appender::rolling::hourly("logs", "forest-daemon.log");
+    let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
+    tracing_subscriber::fmt()
+        .with_writer(non_blocking)
+        .with_thread_ids(true)
+        .init();
+    {
+        let span = tracing::info_span!("my_span");
+        let _guard = span.enter();
+        tracing::info!("Hello from span {:?}", span.id());
+    }
+
     // Capture Cli inputs
     let Cli { opts, cmd } = Cli::from_args();
 
