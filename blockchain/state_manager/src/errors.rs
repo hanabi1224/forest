@@ -1,7 +1,10 @@
 // Copyright 2019-2022 ChainSafe Systems
 // SPDX-License-Identifier: Apache-2.0, MIT
 
+use std::fmt::Debug;
+
 use forest_db::Error as DbErr;
+use forest_encoding::{CborDecodeError, CborEncodeError};
 use thiserror::Error;
 
 /// State manager error
@@ -38,8 +41,14 @@ impl From<anyhow::Error> for Error {
     }
 }
 
-impl From<forest_encoding::error::Error> for Error {
-    fn from(e: forest_encoding::error::Error) -> Self {
+impl<E: Debug> From<CborDecodeError<E>> for Error {
+    fn from(e: CborDecodeError<E>) -> Self {
+        Error::Other(e.to_string())
+    }
+}
+
+impl<E: Debug> From<CborEncodeError<E>> for Error {
+    fn from(e: CborEncodeError<E>) -> Self {
         Error::Other(e.to_string())
     }
 }

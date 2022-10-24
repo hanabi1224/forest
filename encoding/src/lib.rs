@@ -6,7 +6,9 @@ mod hash;
 
 pub use cs_serde_bytes;
 pub use serde::{de, ser};
-pub use serde_ipld_dagcbor::error;
+pub use serde_ipld_dagcbor::error::{
+    DecodeError as CborDecodeError, EncodeError as CborEncodeError,
+};
 
 pub use self::checked_serde_bytes::serde_byte_array;
 pub use self::hash::*;

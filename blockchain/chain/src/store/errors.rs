@@ -1,10 +1,12 @@
 // Copyright 2019-2022 ChainSafe Systems
 // SPDX-License-Identifier: Apache-2.0, MIT
 
+use std::fmt::Debug;
+
 use cid::Error as CidErr;
 use forest_blocks::Error as BlkErr;
 use forest_db::Error as DbErr;
-use forest_encoding::error::Error as SerdeErr;
+use forest_encoding::{CborDecodeError, CborEncodeError};
 use forest_legacy_ipld_amt::Error as AmtErr;
 use fvm_ipld_encoding::Error as EncErr;
 use thiserror::Error;
@@ -47,8 +49,14 @@ impl From<EncErr> for Error {
     }
 }
 
-impl From<SerdeErr> for Error {
-    fn from(e: SerdeErr) -> Error {
+impl<E: Debug> From<CborDecodeError<E>> for Error {
+    fn from(e: CborDecodeError<E>) -> Error {
+        Error::Encoding(e.to_string())
+    }
+}
+
+impl<E: Debug> From<CborEncodeError<E>> for Error {
+    fn from(e: CborEncodeError<E>) -> Error {
         Error::Encoding(e.to_string())
     }
 }

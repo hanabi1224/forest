@@ -1,7 +1,6 @@
 // Copyright 2019-2022 ChainSafe Systems
 // SPDX-License-Identifier: Apache-2.0, MIT
 
-use forest_encoding::error::Error as CborError;
 use thiserror::Error;
 
 /// Database error
@@ -13,8 +12,8 @@ pub enum Error {
     Unopened,
     #[error(transparent)]
     Database(#[from] rocksdb::Error),
-    #[error(transparent)]
-    Encoding(#[from] CborError),
+    #[error("{0}")]
+    Encoding(String),
     #[error("{0}")]
     Other(String),
 }
