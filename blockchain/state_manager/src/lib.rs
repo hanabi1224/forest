@@ -19,9 +19,10 @@ use forest_blocks::{BlockHeader, Tipset, TipsetKeys};
 use forest_chain::{ChainStore, HeadChange};
 use forest_db::Store;
 use forest_fil_types::verifier::ProofVerifier;
-use forest_interpreter::{resolve_to_key_addr, BlockMessages, Heights, RewardCalc, VM};
+use forest_interpreter::{resolve_to_key_addr, BlockMessages, RewardCalc, VM};
+use forest_json::message_receipt;
 use forest_legacy_ipld_amt::Amt;
-use forest_message::{message_receipt, ChainMessage, Message as MessageTrait, MessageReceipt};
+use forest_message::{ChainMessage, Message as MessageTrait};
 use forest_networks::{ChainConfig, Height};
 use forest_utils::db::BlockstoreExt;
 use futures::{channel::oneshot, select, FutureExt};
@@ -37,6 +38,7 @@ use fvm_shared::clock::ChainEpoch;
 use fvm_shared::econ::TokenAmount;
 use fvm_shared::message::Message;
 use fvm_shared::randomness::Randomness;
+use fvm_shared::receipt::Receipt;
 use fvm_shared::sector::{SectorInfo, SectorSize, StoragePower};
 use fvm_shared::version::NetworkVersion;
 use log::{debug, info, trace, warn};
@@ -55,10 +57,10 @@ type CidPair = (Cid, Cid);
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct InvocResult {
-    #[serde(with = "forest_message::message::json")]
+    #[serde(with = "forest_json::message::json")]
     pub msg: Message,
     #[serde(with = "message_receipt::json::opt")]
-    pub msg_rct: Option<MessageReceipt>,
+    pub msg_rct: Option<Receipt>,
     pub error: Option<String>,
 }
 
@@ -350,7 +352,6 @@ where
         let turbo_height = self.chain_config.epoch(Height::Turbo);
         let rand_clone = rand.clone();
         let create_vm = |state_root, epoch| {
-            let heights = Heights::new(&self.chain_config);
             let network_version = self.get_network_version(epoch);
             VM::<_>::new(
                 state_root,
@@ -359,13 +360,13 @@ where
                 &rand_clone,
                 base_fee.clone(),
                 network_version,
-                |height, state| self.genesis_info.get_circulating_supply(height, state),
+                self.genesis_info
+                    .get_circulating_supply(epoch, &db, &state_root)?,
                 self.reward_calc.clone(),
                 chain_epoch_root(Arc::clone(self), Arc::clone(tipset)),
                 self.engine
                     .get(&NetworkConfig::new(network_version))
                     .unwrap(),
-                heights,
                 self.chain_config.policy.chain_finality,
             )
         };
@@ -482,25 +483,22 @@ where
         span!("state_call_raw", {
             let bstate = tipset.parent_state();
             let bheight = tipset.epoch();
-
             let store_arc = self.blockstore_cloned();
-
-            let heights = Heights::new(&self.chain_config);
             let network_version = self.get_network_version(bheight);
             let mut vm = VM::<_>::new(
                 *bstate,
-                store_arc,
+                store_arc.clone(),
                 bheight,
                 rand,
                 TokenAmount::zero(),
                 network_version,
-                |height, state| self.genesis_info.get_circulating_supply(height, state),
+                self.genesis_info
+                    .get_circulating_supply(bheight, &store_arc, bstate)?,
                 self.reward_calc.clone(),
                 chain_epoch_root(Arc::clone(self), Arc::clone(tipset)),
                 self.engine
                     .get(&NetworkConfig::new(network_version))
                     .unwrap(),
-                heights,
                 self.chain_config.policy.chain_finality,
             )?;
 
@@ -574,23 +572,23 @@ where
         // TODO investigate: this doesn't use a buffered store in any way, and can lead to
         // state bloat potentially?
         let store_arc = self.blockstore_cloned();
-        let heights = Heights::new(&self.chain_config);
         // Since we're simulating a future message, pretend we're applying it in the "next" tipset
         let network_version = self.get_network_version(ts.epoch() + 1);
+        let epoch = ts.epoch() + 1;
         let mut vm = VM::<_>::new(
             st,
-            store_arc,
-            ts.epoch() + 1,
+            store_arc.clone(),
+            epoch,
             &chain_rand,
             ts.blocks()[0].parent_base_fee().clone(),
             network_version,
-            |height, state| self.genesis_info.get_circulating_supply(height, state),
+            self.genesis_info
+                .get_circulating_supply(epoch, &store_arc, &st)?,
             self.reward_calc.clone(),
             chain_epoch_root(Arc::clone(self), Arc::clone(&ts)),
             self.engine
                 .get(&NetworkConfig::new(network_version))
                 .unwrap(),
-            heights,
             self.chain_config.policy.chain_finality,
         )?;
 
@@ -922,7 +920,7 @@ where
         tipset: &Tipset,
         msg_cid: Cid,
         (message_from_address, message_sequence): (&Address, &u64),
-    ) -> Result<Option<MessageReceipt>, Error> {
+    ) -> Result<Option<Receipt>, Error> {
         if tipset.epoch() == 0 {
             return Ok(None);
         }
@@ -979,7 +977,7 @@ where
         &self,
         current: &Tipset,
         (message_from_address, message_cid, message_sequence): (&Address, &Cid, &u64),
-    ) -> Result<Option<(Arc<Tipset>, MessageReceipt)>, Result<Arc<Tipset>, Error>> {
+    ) -> Result<Option<(Arc<Tipset>, Receipt)>, Result<Arc<Tipset>, Error>> {
         if current.epoch() == 0 {
             return Ok(None);
         }
@@ -1025,7 +1023,7 @@ where
         &self,
         current: &Tipset,
         params: (&Address, &Cid, &u64),
-    ) -> Result<Option<(Arc<Tipset>, MessageReceipt)>, Error> {
+    ) -> Result<Option<(Arc<Tipset>, Receipt)>, Error> {
         let mut ts: Arc<Tipset> = match self.check_search(current, params).await {
             Ok(res) => return Ok(res),
             Err(e) => e?,
@@ -1040,7 +1038,7 @@ where
         }
     }
     /// Returns a message receipt from a given tipset and message CID.
-    pub async fn get_receipt(&self, tipset: &Tipset, msg: Cid) -> Result<MessageReceipt, Error> {
+    pub async fn get_receipt(&self, tipset: &Tipset, msg: Cid) -> Result<Receipt, Error> {
         let m = forest_chain::get_chain_message(self.blockstore(), &msg)
             .map_err(|e| Error::Other(e.to_string()))?;
         let message_var = (m.from(), &m.sequence());
@@ -1071,7 +1069,7 @@ where
         self: &Arc<Self>,
         msg_cid: Cid,
         confidence: i64,
-    ) -> Result<(Option<Arc<Tipset>>, Option<MessageReceipt>), Error>
+    ) -> Result<(Option<Arc<Tipset>>, Option<Receipt>), Error>
     where
         DB: Blockstore + Store + Clone + Send + Sync + 'static,
     {
@@ -1090,7 +1088,7 @@ where
         }
 
         let mut candidate_tipset: Option<Arc<Tipset>> = None;
-        let mut candidate_receipt: Option<MessageReceipt> = None;
+        let mut candidate_receipt: Option<Receipt> = None;
 
         let sm_cloned = Arc::clone(self);
         let cid = message
@@ -1119,10 +1117,7 @@ where
         let sm_cloned = Arc::clone(self);
 
         // Wait for message to be included in head change.
-        let mut subscriber_poll = task::spawn::<
-            _,
-            Result<(Option<Arc<Tipset>>, Option<MessageReceipt>), Error>,
-        >(async move {
+        let mut subscriber_poll = task::spawn(async move {
             loop {
                 match subscriber.recv().await {
                     Ok(subscriber) => match subscriber {
@@ -1380,9 +1375,10 @@ where
     pub fn get_circulating_supply(
         self: &Arc<Self>,
         height: ChainEpoch,
-        state_tree: &StateTree<&DB>,
+        db: &DB,
+        root: &Cid,
     ) -> Result<TokenAmount, anyhow::Error> {
-        self.genesis_info.get_circulating_supply(height, state_tree)
+        self.genesis_info.get_circulating_supply(height, db, root)
     }
 
     /// Return the state of Market Actor.

@@ -5,13 +5,12 @@ use crate::fvm::ForestExterns;
 use cid::Cid;
 use forest_actor_interface::{cron, reward, system, AwardBlockRewardParams};
 use forest_db::Store;
-use forest_message::{ChainMessage, MessageReceipt};
+use forest_message::ChainMessage;
 use forest_networks::{ChainConfig, Height};
 use fvm::call_manager::DefaultCallManager;
 use fvm::executor::{ApplyRet, DefaultExecutor};
 use fvm::externs::Rand;
 use fvm::machine::{DefaultMachine, Engine, Machine, NetworkConfig};
-use fvm::state_tree::StateTree;
 use fvm::DefaultKernel;
 use fvm_ipld_blockstore::Blockstore;
 use fvm_ipld_encoding::{Cbor, RawBytes};
@@ -21,6 +20,7 @@ use fvm_shared::clock::ChainEpoch;
 use fvm_shared::econ::TokenAmount;
 use fvm_shared::error::ExitCode;
 use fvm_shared::message::Message;
+use fvm_shared::receipt::Receipt;
 use fvm_shared::version::NetworkVersion;
 use fvm_shared::{DefaultNetworkParams, NetworkParams, BLOCK_GAS_LIMIT, METHOD_SEND};
 use std::collections::HashSet;
@@ -79,7 +79,6 @@ pub struct VM<DB: Blockstore + Store + Clone + 'static, P = DefaultNetworkParams
     fvm_executor: ForestExecutor<DB>,
     params: PhantomData<P>,
     reward_calc: Arc<dyn RewardCalc>,
-    heights: Heights,
 }
 
 impl<DB, P> VM<DB, P>
@@ -88,27 +87,22 @@ where
     P: NetworkParams,
 {
     #[allow(clippy::too_many_arguments)]
-    pub fn new<R, C>(
+    pub fn new<R>(
         root: Cid,
         store_arc: DB,
         epoch: ChainEpoch,
         rand: &R,
         base_fee: TokenAmount,
         network_version: NetworkVersion,
-        circ_supply_calc: C,
+        circ_supply: TokenAmount,
         reward_calc: Arc<dyn RewardCalc>,
         lb_fn: Box<dyn Fn(ChainEpoch) -> Cid>,
         engine: Engine,
-        heights: Heights,
         chain_finality: i64,
     ) -> Result<Self, anyhow::Error>
     where
         R: Rand + Clone + 'static,
-        C: FnOnce(ChainEpoch, &StateTree<&DB>) -> Result<TokenAmount, anyhow::Error>,
     {
-        let state = StateTree::new_from_root(&store_arc, &root)?;
-        let circ_supply = circ_supply_calc(epoch, &state)?;
-
         let mut context = NetworkConfig::new(network_version).for_epoch(epoch, root);
         context.set_base_fee(base_fee);
         context.set_circulating_supply(circ_supply);
@@ -133,7 +127,6 @@ where
             fvm_executor: exec,
             params: PhantomData,
             reward_calc,
-            heights,
         })
     }
 
@@ -183,22 +176,6 @@ where
         Ok(())
     }
 
-    /// Flushes the `StateTree` and perform a state migration if there is a migration at this epoch.
-    /// If there is no migration this function will return `Ok(None)`.
-    pub fn migrate_state(
-        &self,
-        epoch: ChainEpoch,
-        _store: Arc<impl Blockstore + Send + Sync>,
-    ) -> Result<Option<Cid>, anyhow::Error> {
-        match epoch {
-            x if x == self.heights.turbo => {
-                // FIXME: Support state migrations.
-                panic!("Cannot migrate state when using FVM. See https://github.com/ChainSafe/forest/issues/1454 for updates.");
-            }
-            _ => Ok(None),
-        }
-    }
-
     /// Apply block messages from a Tipset.
     /// Returns the receipts from the transactions.
     pub fn apply_block_messages(
@@ -208,7 +185,7 @@ where
         mut callback: Option<
             impl FnMut(&Cid, &ChainMessage, &ApplyRet) -> Result<(), anyhow::Error>,
         >,
-    ) -> Result<Vec<MessageReceipt>, anyhow::Error> {
+    ) -> Result<Vec<Receipt>, anyhow::Error> {
         let mut receipts = Vec::new();
         let mut processed = HashSet::<Cid>::default();
 
