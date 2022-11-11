@@ -58,6 +58,7 @@ bytes                 = "1.2"
 chrono                = "0.4"
 cid                   = "0.8"
 cs_serde_bytes        = "0.12.2"
+dhat                  = "0.3"
 digest                = "0.10.5"
 directories           = "4.0.1"
 fil_actor_account_v8  = { package = "fil_actor_account_state_v8", version = "=8.0.0", git = "https://github.com/filecoin-project/builtin-actors", branch = "lemmih/upgraded-v8" }

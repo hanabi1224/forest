@@ -19,6 +19,7 @@ chrono.workspace                 = true
 cid                              = { workspace = true, default-features = false, features = ["std"] }
 ctrlc                            = "3.2"
 daemonize-me                     = "2.0"
+dhat                             = { workspace = true, optional = true }
 dialoguer                        = "0.10.2"
 directories.workspace            = true
 fil_actor_miner_v8.workspace     = true
@@ -86,7 +87,9 @@ quickcheck.workspace = true
 rand.workspace       = true
 
 [features]
-default          = ["forest_fil_cns"]
-insecure_post    = ["forest_fil_cns/insecure_post"]
+default = ["forest_fil_cns"]
+
+dhat-heap        = ["dep:dhat"]
 forest_fil_cns   = ["dep:forest_fil_cns"]
 forest_deleg_cns = ["dep:forest_deleg_cns"]
+insecure_post    = ["forest_fil_cns/insecure_post"]

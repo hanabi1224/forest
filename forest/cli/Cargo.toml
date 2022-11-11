@@ -11,6 +11,7 @@ async-log.workspace              = true
 async-std                        = { workspace = true, features = ["attributes", "tokio1"] }
 base64.workspace                 = true
 cid                              = { workspace = true, default-features = false, features = ["std"] }
+dhat                             = { workspace = true, optional = true }
 directories.workspace            = true
 fil_actor_miner_v8.workspace     = true
 forest_actor_interface.workspace = true
@@ -73,3 +74,8 @@ uuid                             = { version = "1.1", features = ["v4"] }
 assert_cmd.workspace = true
 quickcheck.workspace = true
 rand.workspace       = true
+
+[features]
+default = []
+
+dhat-heap = ["dep:dhat"]

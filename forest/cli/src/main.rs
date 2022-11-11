@@ -11,7 +11,14 @@ use forest_cli_shared::{cli::LogConfig, logger};
 use forest_utils::io::ProgressBar;
 use structopt::StructOpt;
 
+#[cfg(feature = "dhat-heap")]
+#[global_allocator]
+static ALLOC: dhat::Alloc = dhat::Alloc;
+
 fn main() {
+    #[cfg(feature = "dhat-heap")]
+    let _profiler = dhat::Profiler::new_heap();
+
     // Capture Cli inputs
     let Cli { opts, cmd } = Cli::from_args();
 

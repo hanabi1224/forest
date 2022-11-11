@@ -18,12 +18,15 @@ use log::{info, warn};
 use raw_sync::events::{Event, EventInit};
 use raw_sync::Timeout;
 use shared_memory::ShmemConf;
-use structopt::StructOpt;
-use tempfile::{Builder, TempPath};
-
 use std::process;
 use std::time::Duration;
 use std::{error::Error, fs::File};
+use structopt::StructOpt;
+use tempfile::{Builder, TempPath};
+
+#[cfg(feature = "dhat-heap")]
+#[global_allocator]
+static ALLOC: dhat::Alloc = dhat::Alloc;
 
 const EVENT_TIMEOUT: Timeout = Timeout::Val(Duration::from_secs(20));
 
@@ -94,6 +97,9 @@ fn build_daemon<'a>(config: &DaemonConfig) -> anyhow::Result<Daemon<'a>> {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    #[cfg(feature = "dhat-heap")]
+    let _profiler = dhat::Profiler::new_heap();
+
     // Capture Cli inputs
     let Cli { opts, cmd } = Cli::from_args();
 
