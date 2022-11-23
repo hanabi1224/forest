@@ -1,24 +1,6 @@
 // Copyright 2019-2022 ChainSafe Systems
 // SPDX-License-Identifier: Apache-2.0, MIT
 
-use forest_utils::io::ProgressBar;
-use futures::stream::FuturesUnordered;
-use futures::StreamExt;
-use futures::TryFutureExt;
-use fvm_shared::bigint::BigInt;
-use fvm_shared::crypto::signature::ops::verify_bls_aggregate;
-use log::{debug, error, info, trace, warn};
-use nonempty::NonEmpty;
-use std::cmp::{min, Ordering};
-use std::collections::{HashMap, HashSet};
-use std::convert::TryFrom;
-use std::future::Future;
-use std::pin::Pin;
-use std::sync::Arc;
-use std::task::{Context, Poll};
-use std::time::{SystemTime, UNIX_EPOCH};
-use thiserror::Error;
-
 use crate::bad_block_cache::BadBlockCache;
 use crate::consensus::{collect_errs, Consensus};
 use crate::metrics;
@@ -39,15 +21,32 @@ use forest_message::Message as MessageTrait;
 use forest_networks::Height;
 use forest_state_manager::Error as StateManagerError;
 use forest_state_manager::StateManager;
+use forest_utils::io::ProgressBar;
+use futures::stream::FuturesUnordered;
 use futures::Stream;
+use futures::StreamExt;
+use futures::TryFutureExt;
 use fvm::gas::price_list_by_network_version;
 use fvm::state_tree::StateTree;
 use fvm_ipld_blockstore::Blockstore;
 use fvm_ipld_encoding::Cbor;
 use fvm_shared::address::Address;
+use fvm_shared::bigint::BigInt;
 use fvm_shared::clock::ChainEpoch;
+use fvm_shared::crypto::signature::ops::verify_bls_aggregate;
 use fvm_shared::message::Message;
 use fvm_shared::{ALLOWABLE_CLOCK_DRIFT, BLOCK_GAS_LIMIT};
+use log::{debug, error, info, trace, warn};
+use nonempty::NonEmpty;
+use std::cmp::{min, Ordering};
+use std::collections::{HashMap, HashSet};
+use std::convert::TryFrom;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
+use std::task::{Context, Poll};
+use std::time::{SystemTime, UNIX_EPOCH};
+use thiserror::Error;
 
 const MAX_TIPSETS_TO_REQUEST: u64 = 100;
 
@@ -807,9 +806,9 @@ fn sync_tipset_range<DB: Blockstore + Store + Clone + Sync + Send + 'static, C: 
             state_manager,
             network,
             chain_store.clone(),
-            &bad_block_cache,
+            bad_block_cache,
             parent_tipsets,
-            &genesis,
+            genesis,
             InvalidBlockStrategy::Strict,
         )
         .await
@@ -988,9 +987,9 @@ fn sync_tipset<DB: Blockstore + Store + Clone + Sync + Send + 'static, C: Consen
             state_manager,
             network,
             chain_store.clone(),
-            &bad_block_cache,
+            bad_block_cache,
             vec![proposed_head.clone()],
-            &genesis,
+            genesis,
             InvalidBlockStrategy::Forgiving,
         )
         .await
@@ -1070,9 +1069,9 @@ async fn sync_messages_check_state<
     state_manager: Arc<StateManager<DB>>,
     network: SyncNetworkContext<DB>,
     chainstore: Arc<ChainStore<DB>>,
-    bad_block_cache: &BadBlockCache,
+    bad_block_cache: Arc<BadBlockCache>,
     tipsets: Vec<Arc<Tipset>>,
-    genesis: &Tipset,
+    genesis: Arc<Tipset>,
     invalid_block_strategy: InvalidBlockStrategy,
 ) -> Result<(), TipsetRangeSyncerError<C>> {
     // Sync the messages for one or many tipsets @ a time
@@ -1082,8 +1081,8 @@ async fn sync_messages_check_state<
 
     // Spawn a background task for the chain_exchange message requests
 
-    let (s, r) = flume::bounded(REQUEST_WINDOW * 2);
-    let handle = tokio::task::spawn(async move {
+    let (ts_tx, ts_rx) = flume::bounded(REQUEST_WINDOW * 2);
+    tokio::task::spawn(async move {
         let mut batch: Vec<Arc<Tipset>> = Vec::with_capacity(REQUEST_WINDOW);
 
         // Visit tipsets in chronological order
@@ -1093,7 +1092,7 @@ async fn sync_messages_check_state<
             // it directly to the validator.
             if batch.is_empty() {
                 if let Some(full_tipset) = task_chainstore.fill_tipset(&tipset) {
-                    s.send_async(full_tipset).await?;
+                    ts_tx.send_async(full_tipset).await?;
                     continue;
                 }
             }
@@ -1101,36 +1100,61 @@ async fn sync_messages_check_state<
             // Request tipset messages via chain_exchange
             batch.push(tipset);
             if batch.len() == REQUEST_WINDOW {
-                fetch_batch(&batch, &network, &task_chainstore, &s).await?;
+                fetch_batch(&batch, &network, &task_chainstore, &ts_tx).await?;
                 batch.clear();
             }
         }
         // Fetch last batch
-        fetch_batch(&batch, &network, &task_chainstore, &s).await?;
+        fetch_batch(&batch, &network, &task_chainstore, &ts_tx).await?;
 
-        Ok(())
+        Ok::<_, TipsetRangeSyncerError<C>>(())
     });
 
+    let (ctl_tx, ctl_rx) = flume::bounded(1);
+    let (tasks_tx, tasks_rx) = flume::unbounded();
     // Validation loop
-    while let Ok(full_tipset) = r.recv_async().await {
-        let current_epoch = full_tipset.epoch();
-        let timer = metrics::TIPSET_PROCESSING_TIME.start_timer();
-        validate_tipset::<_, C>(
-            consensus.clone(),
-            state_manager.clone(),
-            &chainstore,
-            bad_block_cache,
-            full_tipset,
-            genesis,
-            invalid_block_strategy,
-        )
-        .await?;
-        timer.observe_duration();
-        tracker.write().await.set_epoch(current_epoch);
-        metrics::LAST_VALIDATED_TIPSET_EPOCH.set(current_epoch as u64);
+    tokio::task::spawn(async move {
+        let mut last_tipset = None;
+        while let Ok(full_tipset) = ts_rx.recv_async().await {
+            let current_epoch = full_tipset.epoch();
+            ctl_tx.send_async(()).await.unwrap();
+            let consensus = consensus.clone();
+            let state_manager = state_manager.clone();
+            let chainstore = chainstore.clone();
+            let bad_block_cache = bad_block_cache.clone();
+            let full_tipset_cloned = full_tipset.clone();
+            let genesis = genesis.clone();
+            let base_tipset = Arc::new(last_tipset);
+            let ctl_rx = ctl_rx.clone();
+            let handle = tokio::task::spawn(async move {
+                let _timer = metrics::TIPSET_PROCESSING_TIME.start_timer();
+                let r = validate_tipset::<_, C>(
+                    consensus,
+                    state_manager,
+                    &chainstore,
+                    &bad_block_cache,
+                    full_tipset_cloned,
+                    &genesis,
+                    base_tipset,
+                    invalid_block_strategy,
+                )
+                .await
+                .map(|_| current_epoch);
+                ctl_rx.recv_async().await.unwrap();
+                r
+            });
+            tasks_tx.send_async(handle).await.unwrap();
+            last_tipset = Some(full_tipset.into_tipset());
+        }
+    });
+
+    while let Ok(task) = tasks_rx.recv_async().await {
+        let validated_epoch = task.await??;
+        tracker.write().await.set_epoch(validated_epoch);
+        metrics::LAST_VALIDATED_TIPSET_EPOCH.set(validated_epoch as u64);
     }
 
-    handle.await?
+    Ok(())
 }
 
 /// Validates full blocks in the tipset in parallel (since the messages are not executed),
@@ -1143,6 +1167,7 @@ async fn validate_tipset<DB: Blockstore + Store + Clone + Send + Sync + 'static,
     bad_block_cache: &BadBlockCache,
     full_tipset: FullTipset,
     genesis: &Tipset,
+    base_tipset: Arc<Option<Tipset>>,
     invalid_block_strategy: InvalidBlockStrategy,
 ) -> Result<(), TipsetRangeSyncerError<C>> {
     if full_tipset.key().eq(genesis.key()) {
@@ -1167,6 +1192,7 @@ async fn validate_tipset<DB: Blockstore + Store + Clone + Send + Sync + 'static,
             consensus.clone(),
             state_manager.clone(),
             Arc::new(b),
+            base_tipset.clone(),
         ));
         validations.push(validation_fn);
     }
@@ -1222,6 +1248,7 @@ async fn validate_block<DB: Blockstore + Store + Clone + Sync + Send + 'static, 
     consensus: Arc<C>,
     state_manager: Arc<StateManager<DB>>,
     block: Arc<Block>,
+    base_tipset: Arc<Option<Tipset>>,
 ) -> Result<Arc<Block>, (Cid, TipsetRangeSyncerError<C>)> {
     trace!(
         "Validating block: epoch = {}, weight = {}, key = {}",
@@ -1248,20 +1275,25 @@ async fn validate_block<DB: Blockstore + Store + Clone + Sync + Send + 'static, 
     block_sanity_checks(header).map_err(|e| (*block_cid, e))?;
     block_timestamp_checks(header).map_err(|e| (*block_cid, e))?;
 
-    let base_tipset = chain_store
-        .tipset_from_keys(header.parents())
-        .await
-        // The parent tipset will always be there when calling validate_block
-        // as part of the sync_tipset_range flow because all of the headers in the range
-        // have been committed to the store. When validate_block is called from sync_tipset
-        // this guarantee does not exist, so we create a specific error to inform the caller
-        // not to add this block to the bad blocks cache.
-        .map_err(|why| {
-            (
-                *block_cid,
-                TipsetRangeSyncerError::TipsetParentNotFound(why),
-            )
-        })?;
+    let base_tipset = match &*base_tipset {
+        Some(ts) => Ok(Arc::new(ts.clone())),
+        None => {
+            chain_store
+                .tipset_from_keys(header.parents())
+                .await
+                // The parent tipset will always be there when calling validate_block
+                // as part of the sync_tipset_range flow because all of the headers in the range
+                // have been committed to the store. When validate_block is called from sync_tipset
+                // this guarantee does not exist, so we create a specific error to inform the caller
+                // not to add this block to the bad blocks cache.
+                .map_err(|why| {
+                    (
+                        *block_cid,
+                        TipsetRangeSyncerError::TipsetParentNotFound(why),
+                    )
+                })
+        }
+    }?;
 
     // Retrieve lookback tipset for validation
     let lookback_state = state_manager

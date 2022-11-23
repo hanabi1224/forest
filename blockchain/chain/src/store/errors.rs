@@ -13,7 +13,7 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum Error {
     /// Key was not found
-    #[error("Invalid tipset: {0}")]
+    #[error("Undefined tipset key: {0}")]
     UndefinedKey(String),
     /// Tipset contains no blocks
     #[error("No blocks for tipset")]
