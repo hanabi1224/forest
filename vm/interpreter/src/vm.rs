@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0, MIT
 
 use crate::fvm::ForestExterns;
+use crate::metrics;
 use cid::Cid;
 use forest_actor_interface::{cron, reward, system, AwardBlockRewardParams};
 use forest_message::ChainMessage;
@@ -192,6 +193,9 @@ where
                 penalty,
                 gas_reward,
             )? {
+                let _timer = metrics::APPLY_BLOCK_MESSAGES_TASKS_TIME
+                    .with_label_values(&[metrics::values::APPLY_IMPLICIT])
+                    .start_timer();
                 let ret = self.apply_implicit_message(&rew_msg)?;
                 if let Some(err) = ret.failure_info {
                     anyhow::bail!(
@@ -213,6 +217,9 @@ where
             }
         }
 
+        let _timer = metrics::APPLY_BLOCK_MESSAGES_TASKS_TIME
+            .with_label_values(&[metrics::values::RUN_CRON])
+            .start_timer();
         if let Err(e) = self.run_cron(epoch, callback.as_mut()) {
             log::error!("End of epoch cron failed to run: {}", e);
         }

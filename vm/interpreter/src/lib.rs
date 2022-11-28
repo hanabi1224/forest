@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0, MIT
 
 mod fvm;
+mod metrics;
 mod vm;
 
 pub use self::vm::*;

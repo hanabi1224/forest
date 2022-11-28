@@ -326,6 +326,9 @@ where
 
         let turbo_height = self.chain_config.epoch(Height::Turbo);
         let create_vm = |state_root, epoch| {
+            let _timer = metrics::APPLY_BLOCKS_TASKS_TIME
+                .with_label_values(&[metrics::values::CREATE_VM])
+                .start_timer();
             VM::new(
                 state_root,
                 self.blockstore().clone(),
@@ -349,12 +352,21 @@ where
 
         for epoch_i in parent_epoch..epoch {
             if epoch_i > parent_epoch {
+                log::info!("apply_blocks|run_cron at epoch {epoch_i}");
                 let mut vm = create_vm(parent_state, epoch_i)?;
                 // run cron for null rounds if any
-                if let Err(e) = vm.run_cron(epoch_i, callback.as_mut()) {
-                    log::error!("Beginning of epoch cron failed to run: {}", e);
+                {
+                    let _timer = metrics::APPLY_BLOCKS_TASKS_TIME
+                        .with_label_values(&[metrics::values::RUN_CRON])
+                        .start_timer();
+                    if let Err(e) = vm.run_cron(epoch_i, callback.as_mut()) {
+                        log::error!("Beginning of epoch cron failed to run: {}", e);
+                    }
                 }
 
+                let _timer = metrics::APPLY_BLOCKS_TASKS_TIME
+                    .with_label_values(&[metrics::values::FLUSH_VM])
+                    .start_timer();
                 parent_state = vm.flush()?;
             }
 
@@ -365,6 +377,10 @@ where
 
         let mut vm = create_vm(parent_state, epoch)?;
 
+        info!(
+            "apply_block_messages EPOCH={epoch},N messages={}",
+            messages.len()
+        );
         // Apply tipset messages
         let receipts = vm.apply_block_messages(messages, epoch, callback)?;
 
