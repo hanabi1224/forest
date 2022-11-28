@@ -492,7 +492,7 @@ dependencies = [
  "cc",
  "cfg-if 1.0.0",
  "libc",
- "miniz_oxide",
+ "miniz_oxide 0.5.4",
  "object",
  "rustc-demangle",
 ]
@@ -2501,12 +2501,12 @@ checksum = "0ce7134b9999ecaf8bcd65542e436736ef32ddca1b3e06094cb6ec5755203b80"
 
 [[package]]
 name = "flate2"
-version = "1.0.24"
+version = "1.0.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f82b0f4c27ad9f8bfd1f3208d882da2b09c301bc1c828fd3a00d0216d2fbbff6"
+checksum = "a8a2db397cb1c8772f31494cb8917e48cd1e64f0fa7efac59fbd741a0a8ce841"
 dependencies = [
  "crc32fast",
- "miniz_oxide",
+ "miniz_oxide 0.6.2",
 ]
 
 [[package]]
@@ -2571,18 +2571,15 @@ dependencies = [
  "http",
  "human-repr",
  "jsonrpc-v2",
- "lazy_static",
  "libp2p",
  "log",
  "multibase",
  "num-rational",
  "num-traits",
- "once_cell",
  "pretty_env_logger",
  "prometheus",
  "quickcheck",
  "rand 0.8.5",
- "rayon",
  "regex",
  "rpassword",
  "serde",
@@ -2658,13 +2655,11 @@ dependencies = [
  "multibase",
  "num-rational",
  "num-traits",
- "once_cell",
  "pretty_env_logger",
  "prometheus",
  "quickcheck",
  "rand 0.8.5",
  "raw_sync",
- "rayon",
  "rlimit",
  "rpassword",
  "serde",
@@ -2806,6 +2801,7 @@ dependencies = [
  "forest_ipld",
  "forest_legacy_ipld_amt",
  "forest_message",
+ "forest_metrics",
  "forest_networks",
  "forest_utils",
  "futures",
@@ -2814,7 +2810,6 @@ dependencies = [
  "fvm_ipld_car",
  "fvm_ipld_encoding 0.2.2",
  "fvm_shared",
- "lazy_static",
  "log",
  "lru",
  "multihash",
@@ -2937,7 +2932,6 @@ dependencies = [
  "quickcheck",
  "quickcheck_macros",
  "rand 0.8.5",
- "rayon",
  "rust-s3",
  "serde",
  "serde_json",
@@ -3085,7 +3079,6 @@ dependencies = [
  "num-derive",
  "num-traits",
  "quickcheck",
- "rayon",
  "serde",
  "serde_json",
  "time",
@@ -3147,11 +3140,8 @@ dependencies = [
  "fvm_ipld_encoding 0.2.2",
  "fvm_ipld_hamt",
  "fvm_shared",
- "lazy_static",
  "log",
  "num-traits",
- "num_cpus",
- "rayon",
  "serde_ipld_dagcbor 0.1.2",
 ]
 
@@ -3270,6 +3260,7 @@ dependencies = [
  "forest_encoding",
  "forest_genesis",
  "forest_message",
+ "forest_metrics",
  "forest_networks",
  "forest_utils",
  "futures",
@@ -3360,9 +3351,12 @@ dependencies = [
  "anyhow",
  "axum",
  "fs_extra",
+ "lazy_static",
  "log",
  "prometheus",
+ "prometheus-client",
  "thiserror",
+ "tokio",
 ]
 
 [[package]]
@@ -3535,6 +3529,7 @@ dependencies = [
  "forest_json",
  "forest_legacy_ipld_amt",
  "forest_message",
+ "forest_metrics",
  "forest_networks",
  "forest_statediff",
  "forest_utils",
@@ -3546,7 +3541,9 @@ dependencies = [
  "fvm_shared",
  "lazy_static",
  "log",
+ "lru",
  "num-traits",
+ "once_cell",
  "prometheus",
  "serde",
  "thiserror",
@@ -5484,6 +5481,15 @@ name = "miniz_oxide"
 version = "0.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "96590ba8f175222643a85693f33d26e9c8a015f599c216509b1a6894af675d34"
+dependencies = [
+ "adler",
+]
+
+[[package]]
+name = "miniz_oxide"
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b275950c28b37e794e8c55d88aeb5e139d0ce23fdbbeda68f8d7174abdf9e8fa"
 dependencies = [
  "adler",
 ]
