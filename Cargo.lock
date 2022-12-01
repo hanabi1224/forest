@@ -3224,7 +3224,7 @@ dependencies = [
  "blake2b_simd",
  "cs_serde_bytes",
  "serde",
- "serde_ipld_dagcbor 0.1.2",
+ "serde_ipld_dagcbor",
  "serde_repr",
  "serde_tuple",
 ]
@@ -3344,7 +3344,7 @@ dependencies = [
  "log",
  "num-traits",
  "prometheus",
- "serde_ipld_dagcbor 0.1.2",
+ "serde_ipld_dagcbor",
  "stdext",
 ]
 
@@ -3420,7 +3420,7 @@ dependencies = [
  "quickcheck_macros",
  "rand 0.8.5",
  "serde",
- "serde_ipld_dagcbor 0.1.2",
+ "serde_ipld_dagcbor",
  "serde_json",
  "tempfile",
  "thiserror",
@@ -3481,7 +3481,7 @@ dependencies = [
  "quickcheck",
  "quickcheck_macros",
  "serde",
- "serde_ipld_dagcbor 0.1.2",
+ "serde_ipld_dagcbor",
  "serde_json",
  "smallvec",
  "tokio",
@@ -4177,7 +4177,7 @@ dependencies = [
  "fvm_ipld_blockstore",
  "multihash",
  "serde",
- "serde_ipld_dagcbor 0.2.2",
+ "serde_ipld_dagcbor",
  "serde_repr",
  "serde_tuple",
  "thiserror",
@@ -4194,7 +4194,7 @@ dependencies = [
  "fvm_ipld_blockstore",
  "multihash",
  "serde",
- "serde_ipld_dagcbor 0.2.2",
+ "serde_ipld_dagcbor",
  "serde_repr",
  "serde_tuple",
  "thiserror",
@@ -4411,12 +4411,6 @@ dependencies = [
  "tokio-util",
  "tracing",
 ]
-
-[[package]]
-name = "half"
-version = "1.8.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eabb4a44450da02c90444cf74558da904edde8fb4e9035a9a6a4e15445af0bd7"
 
 [[package]]
 name = "hashbrown"
@@ -7648,17 +7642,6 @@ dependencies = [
  "proc-macro2 1.0.47",
  "quote 1.0.21",
  "syn 1.0.104",
-]
-
-[[package]]
-name = "serde_ipld_dagcbor"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "950f35fcae42dd9268d9253eb8f846dcef4d66e4e7d56494f38c8eb13e16d87b"
-dependencies = [
- "cid",
- "half",
- "serde",
 ]
 
 [[package]]
